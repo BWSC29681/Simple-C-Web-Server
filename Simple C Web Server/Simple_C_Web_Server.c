@@ -6,6 +6,7 @@
 #include <io.h>
 #include <fcntl.h>
 #include <sys/stat.h>
+#include <time.h>
 
 #pragma comment(lib, "ws2_32.lib")
 
@@ -22,15 +23,15 @@ const char* HTTP_404_NOT_FOUND =
 "\r\n"
 "<html><body><h1>404 Not Found</h1></body></html>";
 
-SOCKET sockfd; // Global variable for the server socket
+SOCKET sockfd;
 
-// Function to print error messages and exit
+// Print console error messages and exit
 void error(const char* msg) {
     perror(msg);
     exit(1);
 }
 
-// Function to respond to HTTP requests
+// Respond to HTTP requests
 void respond(SOCKET newsockfd) {
     char buffer[BUFFER_SIZE];
     int n = recv(newsockfd, buffer, BUFFER_SIZE - 1, 0);
@@ -39,9 +40,9 @@ void respond(SOCKET newsockfd) {
     }
 
     buffer[n] = '\0';
-    printf("Here is the message: %s\n", buffer);
+    printf("----------------------------------\nIncoming request: %s\n", buffer);
 
-    // Extract the requested file path from the HTTP request
+    // Extract requested file path from the HTTP request
     char* next_token = NULL;
     char* file_path = strtok_s(buffer, " ", &next_token);
     file_path = strtok_s(NULL, " ", &next_token);
@@ -59,11 +60,10 @@ void respond(SOCKET newsockfd) {
     int file_fd = _open(full_path, _O_RDONLY);
 
     if (file_fd == -1) {
-        // If the file is not found, send a 404 response
+        // 404 Not Found
         n = send(newsockfd, HTTP_404_NOT_FOUND, strlen(HTTP_404_NOT_FOUND), 0);
     }
     else {
-        // If the file is found, send the file content
         struct _stat file_stat;
         _fstat(file_fd, &file_stat);
 
@@ -83,37 +83,54 @@ void respond(SOCKET newsockfd) {
     }
 }
 
-// Signal handler to gracefully shut down the server
+// Shut down server gracefully
 void signal_handler(int signum) {
-    printf("Interrupt signal received. Shutting down...\n");
+    printf("Shutting down...\n");
     closesocket(sockfd);
     WSACleanup();
     exit(signum);
 }
 
-int main() {
+void InitializeWinsock() {
     WSADATA wsa;
-    SOCKET newsockfd;
-    struct sockaddr_in serv_addr, cli_addr;
-    int clilen;
 
-    // Initialize Winsock
-    printf("Initialising Winsock...\n");
+    printf("Initializing Winsock...");
     if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) {
         printf("Failed. Error Code : %d", WSAGetLastError());
         return 1;
     }
 
-    printf("Initialised.\n");
+    printf("done.\n");
+}
 
-    // Create a socket
+void CreateSocket() {
+    printf("Creating Socket...");
     sockfd = socket(AF_INET, SOCK_STREAM, 0);
     if (sockfd == INVALID_SOCKET) {
         printf("Could not create socket : %d", WSAGetLastError());
         return 1;
     }
 
-    printf("Socket created.\n");
+    printf("done.\n");
+}
+
+void BindSocket(struct sockaddr_in serv_addr) {
+    printf("Binding Socket...");
+    if (bind(sockfd, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) == SOCKET_ERROR) {
+        printf("Bind failed with error code : %d", WSAGetLastError());
+        return 1;
+    }
+
+    printf("done.\n");
+}
+
+int main() {    
+    SOCKET newsockfd;
+    struct sockaddr_in serv_addr, cli_addr;
+    int clilen;
+
+    InitializeWinsock();
+    CreateSocket();    
 
     // Prepare the sockaddr_in structure
     memset(&serv_addr, 0, sizeof(serv_addr));
@@ -121,18 +138,12 @@ int main() {
     serv_addr.sin_addr.s_addr = INADDR_ANY;
     serv_addr.sin_port = htons(PORT);
 
-    // Bind the socket
-    if (bind(sockfd, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) == SOCKET_ERROR) {
-        printf("Bind failed with error code : %d", WSAGetLastError());
-        return 1;
-    }
-
-    printf("Bind done.\n");
+    BindSocket(serv_addr);    
 
     // Listen for incoming connections
     listen(sockfd, 3);
 
-    printf("Waiting for incoming connections...\n");
+    printf("Waiting for incoming connections...\n\n");
 
     // Set up signal handling for graceful shutdown
     signal(SIGINT, signal_handler);
